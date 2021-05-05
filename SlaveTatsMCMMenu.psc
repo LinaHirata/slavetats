@@ -381,7 +381,7 @@ event OnPageReset(string page)
         int slots = SlaveTats.SLOTS(area)
 
         section_menu_current = Utility.CreateStringArray(slots)
-        tattoo_menu_current = Utility.CreateStringArray(slots)
+        tattoo_menu_current = Utility.CreateIntArray(slots)
 
         ; -----------------------------------------------------------------------------------------------------------------------------------
         ; --------------------------------------------------- Crude paging functionality ----------------------------------------------------
