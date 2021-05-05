@@ -20,6 +20,10 @@ Form[] hair_colors
 string[] hair_color_names
 int num_hair_colors
 
+int page_id = 0
+int _pages = 0
+string last_area = ""
+
 string function VERSION() global
     return "1.0.0" ; This is the data structure version, not the release number that's shown to users
 endfunction
@@ -307,6 +311,7 @@ event OnConfigOpen()
     SlaveTats.acquire_cache()
 
     JValue.cleanPool("SlaveTats-OnConfigOpen")
+    last_area = "" ; resets area from the last time we opened MCM
 endevent
 
 function apply_to_target()
@@ -360,6 +365,12 @@ event OnPageReset(string page)
         endif
     else
         SetCursorFillMode(LEFT_TO_RIGHT)
+        
+        ; resets the page when we change area
+        if area != last_area
+            page_id = 0
+            last_area = area
+        endif
 
         AddHeaderOption(area + " Patterns")
         AddHeaderOption(area + " Colors")
@@ -367,36 +378,55 @@ event OnPageReset(string page)
         int external = JValue.addToPool(JArray.object(), "SlaveTats-OnPageReset")
         SlaveTats.external_slots(target, area, external)
 
-        section_menu_current = new string[12]
-        tattoo_menu_current = new int[12]
-
         int slots = SlaveTats.SLOTS(area)
-        if slots > 12
-            slots = 12
+
+        section_menu_current = Utility.CreateStringArray(slots)
+        tattoo_menu_current = Utility.CreateStringArray(slots)
+
+        ; -----------------------------------------------------------------------------------------------------------------------------------
+        ; --------------------------------------------------- Crude paging functionality ----------------------------------------------------
+        ; -----------------------------------------------------------------------------------------------------------------------------------
+        float slots_per_page = 12.0
+        _pages = Math.Ceiling(slots / slots_per_page)
+        
+        if _pages > 1
+            AddSliderOptionST("PageSelectorST", "Select page:", page_id + 1, "{0}")
+            AddEmptyOption()
         endif
 
-        int slot = 0
-        while slot < slots
+        ; -----------------------------------------------------------------------------------------------------------------------------------
+        ; ---------------------------- State Names changed to allow for easier switching using StringUtil.Split -----------------------------
+        ; ---------------------------- Some visual changes, personal preference but i like it better this way   -----------------------------
+        ; ---------------------------- Also - a bit easier to find which page and which slot youre at           -----------------------------
+        ; -----------------------------------------------------------------------------------------------------------------------------------
+        int slot = (page_id * slots_per_page) as int
+        while (slot < (page_id + 1) * slots_per_page && slot < slots)
             if JArray.findInt(external, slot) >= 0
                 section_menu_current[slot] = "External"
                 tattoo_menu_current[slot] = 0
-                AddMenuOptionST("SECTION_SLOT" + slot, "Section " + (slot + 1), "External", OPTION_FLAG_DISABLED)
-                AddColorOptionST("COLOR_SLOT" + slot, "Ink " + (slot + 1), 0, OPTION_FLAG_DISABLED)
-                AddMenuOptionST("TATTOO_SLOT" + slot, "Pattern " + (slot + 1), "External", OPTION_FLAG_DISABLED)
-                AddColorOptionST("GLOW_SLOT" + slot, "Glow " + (slot + 1), 0, OPTION_FLAG_DISABLED)
+
+                AddHeaderOption("Slot " + (slot + 1))
                 AddEmptyOption()
-                AddToggleOptionST("GLOSS_SLOT" + slot, "Glossy " + (slot + 1), false, OPTION_FLAG_DISABLED)
+                AddMenuOptionST("SECTIONSLOT_" + slot, "Section " + (slot + 1), "External", OPTION_FLAG_DISABLED)
+                AddColorOptionST("COLORSLOT_" + slot, "Ink " + (slot + 1), 0, OPTION_FLAG_DISABLED)
+                AddMenuOptionST("TATTOOSLOT_" + slot, "Pattern " + (slot + 1), "External", OPTION_FLAG_DISABLED)
+                AddColorOptionST("GLOWSLOT_" + slot, "Glow " + (slot + 1), 0, OPTION_FLAG_DISABLED)
+                AddEmptyOption()
+                AddToggleOptionST("GLOSSSLOT_" + slot, "Glossy " + (slot + 1), false, OPTION_FLAG_DISABLED)
             else
                 int entry = SlaveTats.get_applied_tattoo_in_slot(target, area, slot)
                 if entry == 0
                     section_menu_current[slot] = "[No Tattoo]"
                     tattoo_menu_current[slot] = 0
-                    AddMenuOptionST("SECTION_SLOT" + slot, "Section " + (slot + 1), "[No Tattoo]")
-                    AddColorOptionST("COLOR_SLOT" + slot, "Ink " + (slot + 1), 0)
-                    AddMenuOptionST("TATTOO_SLOT" + slot, "Pattern " + (slot + 1), "[No Tattoo]")
-                    AddColorOptionST("GLOW_SLOT" + slot, "Glow " + (slot + 1), 0)
+
+                    AddHeaderOption("Slot " + (slot + 1))
                     AddEmptyOption()
-                    AddToggleOptionST("GLOSS_SLOT" + slot, "Glossy " + (slot + 1), false)
+                    AddMenuOptionST("SECTIONSLOT_" + slot, "Section " + (slot + 1), "[No Tattoo]")
+                    AddColorOptionST("COLORSLOT_" + slot, "Ink " + (slot + 1), 0)
+                    AddMenuOptionST("TATTOOSLOT_" + slot, "Pattern " + (slot + 1), "[No Tattoo]")
+                    AddColorOptionST("GLOWSLOT_" + slot, "Glow " + (slot + 1), 0)
+                    AddEmptyOption()
+                    AddToggleOptionST("GLOSSSLOT_" + slot, "Glossy " + (slot + 1), false)
                 else
                     int flag = 0
                     if JMap.getInt(entry, "locked") > 0
@@ -406,12 +436,14 @@ event OnPageReset(string page)
                     section_menu_current[slot] = JMap.getStr(entry, "section")
                     tattoo_menu_current[slot] = entry
 
-                    AddMenuOptionST("SECTION_SLOT" + slot, "Section " + (slot + 1), JMap.getStr(entry, "section"), flag)
-                    AddColorOptionST("COLOR_SLOT" + slot, "Ink " + (slot + 1), JMap.getInt(entry, "color"), flag)
-                    AddMenuOptionST("TATTOO_SLOT" + slot, "Pattern " + (slot + 1), JMap.getStr(entry, "name"), flag)
-                    AddColorOptionST("GLOW_SLOT" + slot, "Glow " + (slot + 1), JMap.getInt(entry, "glow"), flag)
+                    AddHeaderOption("Slot " + (slot + 1))
                     AddEmptyOption()
-                    AddToggleOptionST("GLOSS_SLOT" + slot, "Glossy " + (slot + 1), JMap.getInt(entry, "gloss") as bool, flag)
+                    AddMenuOptionST("SECTIONSLOT_" + slot, "Section " + (slot + 1), JMap.getStr(entry, "section"), flag)
+                    AddColorOptionST("COLORSLOT_" + slot, "Ink " + (slot + 1), JMap.getInt(entry, "color"), flag)
+                    AddMenuOptionST("TATTOOSLOT_" + slot, "Pattern " + (slot + 1), JMap.getStr(entry, "name"), flag)
+                    AddColorOptionST("GLOWSLOT_" + slot, "Glow " + (slot + 1), JMap.getInt(entry, "glow"), flag)
+                    AddEmptyOption()
+                    AddToggleOptionST("GLOSSSLOT_" + slot, "Glossy " + (slot + 1), JMap.getInt(entry, "gloss") as bool, flag)
                 endif
             endif
             slot += 1
@@ -419,7 +451,25 @@ event OnPageReset(string page)
     endif
 
     JValue.cleanPool("SlaveTats-OnPageReset")
- endevent
+endevent
+
+; -----------------------------------------------------------------------------------------------------------------------------------
+; ------------------------------------------------------- Page selector, duh --------------------------------------------------------
+; -----------------------------------------------------------------------------------------------------------------------------------
+state PageSelectorST
+    event onSliderOpenST() 
+		SetSliderDialogStartValue(page_id + 1)
+		SetSliderDialogDefaultValue(page_id + 1)
+		SetSliderDialogRange(1, _pages)
+		SetSliderDialogInterval(1)
+	endEvent
+
+	event onSliderAcceptST(float value)
+		page_id = (value as int) - 1
+		SetSliderOptionValueST(page_id, "{0}")
+        ForcePageReset()
+	endEvent
+endstate
 
 state TARGET
     event OnMenuOpenST()
@@ -505,60 +555,22 @@ state WEIGHT
     endevent
 endstate
 
-state SECTION_SLOT0
-    event OnMenuOpenST()
-        int slot = 0
+; -----------------------------------------------------------------------------------------------
+; ---------------------------- use non encapsulated state           -----------------------------
+; ---------------------------- switch based on GetState             -----------------------------
+; ---------------------------- allows to have one switching handler -----------------------------
+; -----------------------------------------------------------------------------------------------
+event OnMenuOpenST()
+    string _state = GetState()
+    string[] ids = StringUtil.Split(_state, "_")
+    int slot = ids[1] as int
+
+    if ids[0] == "SECTIONSLOT"
         _setup_sections(AREA(CurrentPage), slot)
         SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
         SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
         SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 0
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 0
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 0
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT0
-    event OnMenuOpenST()
-        int slot = 0
+    elseif ids[0] == "TATTOOSLOT"
         _setup_sections(AREA(CurrentPage), slot)
         _setup_tattoos(section_menu_current[slot])
         if tattoo_menu_current[slot] == 0
@@ -568,19 +580,49 @@ state TATTOO_SLOT0
         endif
         SetMenuDialogDefaultIndex(0)
         SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
+    endif
+endEvent
 
-    event OnMenuAcceptST(int index)
-        int slot = 0
+event OnMenuAcceptST(int index)
+    string _state = GetState()
+    string[] ids = StringUtil.Split(_state, "_")
+    int slot = ids[1] as int
 
+    if ids[0] == "SECTIONSLOT"
+        if index < 0
+            section_menu_current[slot] = "[No Tattoo]"
+            SetMenuOptionValueST("[No Tattoo]")
+            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
+                tattoo_menu_current[slot] = 0
+                SetMenuOptionValueST("[No Tattoo]", false, "TATTOOSLOT_" + slot)
+                SetColorOptionValueST(0, false, "COLORSLOT_" + slot)
+                SetColorOptionValueST(0, false, "GLOWSLOT_" + slot)
+                SetToggleOptionValueST(false, false, "GLOSSSLOT_" + slot)
+            endif
+        elseif section_menu_current[slot] != section_menu_items[index]
+            section_menu_current[slot] = section_menu_items[index]
+            SetMenuOptionValueST(section_menu_current[slot])
+            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
+            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
+                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
+                if entry != 0
+                    tattoo_menu_current[slot] = entry
+                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOOSLOT_" + slot)
+                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLORSLOT_" + slot)
+                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOWSLOT_" + slot)
+                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSSSLOT_" + slot)
+                endif
+            endif
+        endif
+    elseif ids[0] == "TATTOOSLOT"
         if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
             Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
             if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
                 tattoo_menu_current[slot] = 0
                 SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
+                SetColorOptionValueST(0, false, "COLORSLOT_" + slot)
+                SetColorOptionValueST(0, false, "GLOWSLOT_" + slot)
+                SetToggleOptionValueST(false, false, "GLOSSSLOT_" + slot)
             endif
         else
             int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
@@ -591,232 +633,24 @@ state TATTOO_SLOT0
                     Debug.Trace("SlaveTats Menu: Succeeded")
                     tattoo_menu_current[slot] = entry
                     SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
+                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLORSLOT_" + slot)
+                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOWSLOT_" + slot)
+                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSSSLOT_" + slot)
                 endif
             endif
         endif
-    endEvent
+    endif
+endEvent
 
-    event OnDefaultST()
-        int slot = 0
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
+event OnDefaultST()
+    string _state = GetState()
+    string[] ids = StringUtil.Split(_state, "_")
+    int slot = ids[1] as int
 
-    event OnHighlightST()
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT0
-    event OnColorOpenST()
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 0
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT0
-    event OnColorOpenST()
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 0
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT0
-    event OnSelectST()
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 0
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 0
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-; From here down are copy-and-pasted duplicates of the above SLOT0 states. The only
-; difference is the number at the end of the slot name, and the number assigned to
-; the slot variable. This is ugly, but a necessary consequence of the way Papyrus states work
-
-state SECTION_SLOT1
-    event OnMenuOpenST()
-        int slot = 1
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 1
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 1
+    if ids[0] == "SECTIONSLOT"
         section_menu_current[slot] = "[No Tattoo]"
         SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 1
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT1
-    event OnMenuOpenST()
-        int slot = 1
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 1
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 1
+    elseif ids[0] == "TATTOOSLOT"
         int entry = JArray.getObj(tattoos, 0)
         if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
             entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
@@ -825,89 +659,94 @@ state TATTOO_SLOT1
                 SetMenuOptionValueST(JMap.getStr(entry, "name"))
             endif
         endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 1
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT1
-    event OnColorOpenST()
-        int slot = 1
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 1
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 1
+    elseif ids[0] == "COLORSLOT"
         int entry = tattoo_menu_current[slot]
         if JMap.getInt(entry, "color") != 0
             JMap.setInt(entry, "color", 0)
             SetColorOptionValueST(0)
             SlaveTats.mark_actor(target)
         endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 1
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT1
-    event OnColorOpenST()
-        int slot = 1
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 1
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 1
+    elseif ids[0] == "GLOWSLOT"
         int entry = tattoo_menu_current[slot]
         if JMap.getInt(entry, "glow") != 0
             JMap.setInt(entry, "glow", 0)
             SetColorOptionValueST(0)
             SlaveTats.mark_actor(target)
         endif
-    endEvent
+    elseif ids[0] == "GLOSSSLOT"
+        int entry = tattoo_menu_current[slot]
+        JMap.setInt(entry, "gloss", 0)
+        SetToggleOptionValueST(false)
+        SlaveTats.mark_actor(target)
+    endif
+endEvent
 
-    event OnHighlightST()
-        int slot = 1
+event OnHighlightST()
+    string _state = GetState()
+    string[] ids = StringUtil.Split(_state, "_")
+
+    if ids[0] == "SECTIONSLOT"
+        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
+    elseif ids[0] == "TATTOOSLOT"
+        int slot = ids[1] as int
+        int entry = tattoo_menu_current[slot]
+        string credit = JMap.getStr(entry, "credit")
+        if credit
+            SetInfoText("Tattoo by: " + credit)
+        endif
+    elseif ids[0] == "COLORSLOT"
+        SetInfoText("Pick the ink color for this tattoo.")
+    elseif ids[0] == "GLOWSLOT"
         SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
+    elseif ids[0] == "GLOSSSLOT"
+        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
+    endif
+endEvent
 
-state GLOSS_SLOT1
-    event OnSelectST()
-        int slot = 1
+event OnColorOpenST()
+    string _state = GetState()
+    string[] ids = StringUtil.Split(_state, "_")
+    int slot = ids[1] as int
+
+    if ids[0] == "COLORSLOT"
+        int entry = tattoo_menu_current[slot]
+        SetColorDialogStartColor(JMap.getInt(entry, "color"))
+        SetColorDialogDefaultColor(0)
+    elseif ids[0] == "GLOWSLOT"
+        int entry = tattoo_menu_current[slot]
+        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
+        SetColorDialogDefaultColor(0)
+    endif
+endEvent
+
+event OnColorAcceptST(int color)
+    string _state = GetState()
+    string[] ids = StringUtil.Split(_state, "_")
+    int slot = ids[1] as int
+
+    if ids[0] == "COLORSLOT"
+        int entry = tattoo_menu_current[slot]
+        if JMap.getInt(entry, "color") != color
+            JMap.setInt(entry, "color", color)
+            SetColorOptionValueST(color)
+            SlaveTats.mark_actor(target)
+        endif
+    elseif ids[0] == "GLOWSLOT"
+        int entry = tattoo_menu_current[slot]
+        if JMap.getInt(entry, "glow") != color
+            JMap.setInt(entry, "glow", color)
+            SetColorOptionValueST(color)
+            SlaveTats.mark_actor(target)
+        endif
+    endif
+endEvent
+
+event OnSelectST()
+    string _state = GetState()
+    string[] ids = StringUtil.Split(_state, "_")
+    int slot = ids[1] as int
+
+    if ids[0] == "GLOSSSLOT"
         int entry = tattoo_menu_current[slot]
         if JMap.getInt(entry, "gloss") > 0
             JMap.setInt(entry, "gloss", 0)
@@ -917,2138 +756,5 @@ state GLOSS_SLOT1
             SetToggleOptionValueST(true)
         endif
         SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 1
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 1
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT2
-    event OnMenuOpenST()
-        int slot = 2
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 2
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 2
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 2
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT2
-    event OnMenuOpenST()
-        int slot = 2
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 2
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 2
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT2
-    event OnColorOpenST()
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 2
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT2
-    event OnColorOpenST()
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 2
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT2
-    event OnSelectST()
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 2
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 2
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT3
-    event OnMenuOpenST()
-        int slot = 3
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 3
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 3
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 3
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT3
-    event OnMenuOpenST()
-        int slot = 3
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 3
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 3
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT3
-    event OnColorOpenST()
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 3
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT3
-    event OnColorOpenST()
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 3
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT3
-    event OnSelectST()
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 3
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 3
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT4
-    event OnMenuOpenST()
-        int slot = 4
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 4
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 4
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 4
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT4
-    event OnMenuOpenST()
-        int slot = 4
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 4
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 4
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT4
-    event OnColorOpenST()
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 4
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT4
-    event OnColorOpenST()
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 4
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT4
-    event OnSelectST()
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 4
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 4
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT5
-    event OnMenuOpenST()
-        int slot = 5
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 5
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 5
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 5
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT5
-    event OnMenuOpenST()
-        int slot = 5
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 5
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 5
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT5
-    event OnColorOpenST()
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 5
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT5
-    event OnColorOpenST()
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 5
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT5
-    event OnSelectST()
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 5
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 5
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT6
-    event OnMenuOpenST()
-        int slot = 6
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 6
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 6
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 6
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT6
-    event OnMenuOpenST()
-        int slot = 6
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 6
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 6
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT6
-    event OnColorOpenST()
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 6
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT6
-    event OnColorOpenST()
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 6
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT6
-    event OnSelectST()
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 6
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 6
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT7
-    event OnMenuOpenST()
-        int slot = 7
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 7
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 7
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 7
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT7
-    event OnMenuOpenST()
-        int slot = 7
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 7
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 7
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT7
-    event OnColorOpenST()
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 7
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT7
-    event OnColorOpenST()
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 7
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT7
-    event OnSelectST()
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 7
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 7
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT8
-    event OnMenuOpenST()
-        int slot = 8
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 8
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 8
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 8
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT8
-    event OnMenuOpenST()
-        int slot = 8
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 8
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 8
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT8
-    event OnColorOpenST()
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 8
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT8
-    event OnColorOpenST()
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 8
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT8
-    event OnSelectST()
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 8
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 8
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT9
-    event OnMenuOpenST()
-        int slot = 9
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 9
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 9
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 9
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT9
-    event OnMenuOpenST()
-        int slot = 9
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 9
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 9
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT9
-    event OnColorOpenST()
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 9
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT9
-    event OnColorOpenST()
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 9
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT9
-    event OnSelectST()
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 9
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 9
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT10
-    event OnMenuOpenST()
-        int slot = 10
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 10
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 10
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 10
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT10
-    event OnMenuOpenST()
-        int slot = 10
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 10
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 10
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT10
-    event OnColorOpenST()
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 10
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT10
-    event OnColorOpenST()
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 10
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT10
-    event OnSelectST()
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 10
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 10
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
-
-state SECTION_SLOT11
-    event OnMenuOpenST()
-        int slot = 11
-        _setup_sections(AREA(CurrentPage), slot)
-        SetMenuDialogStartIndex(section_menu_items.Find(section_menu_current[slot]))
-        SetMenuDialogDefaultIndex(section_menu_items.Find("[No Tattoo]"))
-        SetMenuDialogOptions(section_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 11
-        ; _setup_sections(CurrentPage) ; Not necessary, since OnMenuOpenST immediately precedes it
-        if index < 0
-            section_menu_current[slot] = "[No Tattoo]"
-            SetMenuOptionValueST("[No Tattoo]")
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]", false, "TATTOO_SLOT" + slot)
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        elseif section_menu_current[slot] != section_menu_items[index]
-            section_menu_current[slot] = section_menu_items[index]
-            SetMenuOptionValueST(section_menu_current[slot])
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), 0)
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"), false, "TATTOO_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 11
-        section_menu_current[slot] = "[No Tattoo]"
-        SetMenuOptionValueST("[No Tattoo]")
-    endEvent
-
-    event OnHighlightST()
-        int slot = 11
-        SetInfoText("Pick a tattoo collection to select your tattoo from. To remove a tattoo, select [No Tattoo] from the section menu.")
-    endEvent
-endstate
-
-state TATTOO_SLOT11
-    event OnMenuOpenST()
-        int slot = 11
-        _setup_sections(AREA(CurrentPage), slot)
-        _setup_tattoos(section_menu_current[slot])
-        if tattoo_menu_current[slot] == 0
-            SetMenuDialogStartIndex(0)
-        else
-            SetMenuDialogStartIndex(tattoo_menu_items.Find(JMap.getStr(tattoo_menu_current[slot], "name")))
-        endif
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(tattoo_menu_items)
-    endEvent
-
-    event OnMenuAcceptST(int index)
-        int slot = 11
-
-        if index == -1 || tattoo_menu_items[index] == "[No Tattoo]"
-            Debug.Trace("SlaveTats Menu: Emptying slot " + slot)
-            if tattoo_menu_current[slot] != 0 && !SlaveTats.remove_tattoo_from_slot(target, AREA(CurrentPage), slot)
-                tattoo_menu_current[slot] = 0
-                SetMenuOptionValueST("[No Tattoo]")
-                SetColorOptionValueST(0, false, "COLOR_SLOT" + slot)
-                SetColorOptionValueST(0, false, "GLOW_SLOT" + slot)
-                SetToggleOptionValueST(false, false, "GLOSS_SLOT" + slot)
-            endif
-        else
-            int entry = JArray.getObj(JMap.getObj(tattoos, section_menu_current[slot]), index)
-            Debug.Trace("SlaveTats Menu: Setting slot " + slot + " to " + JMap.getStr(entry, "name"))
-            if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-                entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-                if entry != 0
-                    Debug.Trace("SlaveTats Menu: Succeeded")
-                    tattoo_menu_current[slot] = entry
-                    SetMenuOptionValueST(JMap.getStr(entry, "name"))
-                    SetColorOptionValueST(JMap.getInt(entry, "color"), false, "COLOR_SLOT" + slot)
-                    SetColorOptionValueST(JMap.getInt(entry, "glow"), false, "GLOW_SLOT" + slot)
-                    SetToggleOptionValueST(JMap.getInt(entry, "gloss") > 0, false, "GLOSS_SLOT" + slot)
-                endif
-            endif
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 11
-        int entry = JArray.getObj(tattoos, 0)
-        if !SlaveTats.tattoo_matches(entry, tattoo_menu_current[slot])
-            entry = SlaveTats.add_and_get_tattoo(target, entry, slot)
-            if entry != 0
-                tattoo_menu_current[slot] = entry
-                SetMenuOptionValueST(JMap.getStr(entry, "name"))
-            endif
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        string credit = JMap.getStr(entry, "credit")
-        if credit
-            SetInfoText("Tattoo by: " + credit)
-        endif
-    endEvent
-endstate
-
-state COLOR_SLOT11
-    event OnColorOpenST()
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "color"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != color
-            JMap.setInt(entry, "color", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "color") != 0
-            JMap.setInt(entry, "color", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 11
-        SetInfoText("Pick the ink color for this tattoo.")
-    endEvent
-endstate
-
-state GLOW_SLOT11
-    event OnColorOpenST()
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        SetColorDialogStartColor(JMap.getInt(entry, "glow"))
-        SetColorDialogDefaultColor(0)
-    endEvent
-
-    event OnColorAcceptST(int color)
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != color
-            JMap.setInt(entry, "glow", color)
-            SetColorOptionValueST(color)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnDefaultST()
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "glow") != 0
-            JMap.setInt(entry, "glow", 0)
-            SetColorOptionValueST(0)
-            SlaveTats.mark_actor(target)
-        endif
-    endEvent
-
-    event OnHighlightST()
-        int slot = 11
-        SetInfoText("Pick a color for the tattoo to glow (black is no glow).")
-    endEvent
-endstate
-
-state GLOSS_SLOT11
-    event OnSelectST()
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        if JMap.getInt(entry, "gloss") > 0
-            JMap.setInt(entry, "gloss", 0)
-            SetToggleOptionValueST(false)
-        else
-            JMap.setInt(entry, "gloss", 1)
-            SetToggleOptionValueST(true)
-        endif
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnDefaultST()
-        int slot = 11
-        int entry = tattoo_menu_current[slot]
-        JMap.setInt(entry, "gloss", 0)
-        SetToggleOptionValueST(false)
-        SlaveTats.mark_actor(target)
-    endEvent
-
-    event OnHighlightST()
-        int slot = 11
-        SetInfoText("Checking this makes the tattoo slightly glossy, like skin.")
-    endEvent
-endstate
+    endif
+endEvent
